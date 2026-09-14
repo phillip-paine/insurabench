@@ -1,0 +1,19 @@
+[project]
+name = "insurabench"
+version = "0.1.0"
+description = "End-to-end non-life insurance statistical modeling for data scientists"
+authors = [
+    {name = "Phillip Paine",email = "xxx@gmail.com"}
+]
+requires-python = "^3.12"
+dependencies = [
+    "pandas (>=3.0.5,<4.0.0)",
+    "numpy (>=2.5.3,<3.0.0)",
+    "scipy (>=1.18.1,<2.0.0)",
+    "glum (>=3.4.1,<4.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
