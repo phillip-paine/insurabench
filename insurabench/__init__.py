@@ -1,9 +1,8 @@
 """insurabench: end-to-end non-life insurance statistical modeling for data scientists.
 
-This top-level import surface only exposes the data layer so far (see the
-project's build order: data layer -> GLM wrapper -> curves/evaluation ->
-GBM wrapper -> geo -> reporting -> fairness stub). Modeling, curves, and
-evaluation modules are added in later phases.
+Implemented so far (see the project's build order): the data layer
+(``PolicyFrame`` and friends) and the GLM wrapper. Curves, evaluation, the
+GBM wrapper, geo, and reporting modules are not implemented yet.
 """
 from __future__ import annotations
 
@@ -15,16 +14,24 @@ from insurabench.exceptions import (
     PolicyIdentityError,
     SchemaError,
 )
+from insurabench.model_selection import (
+    train_test_split_policy_frame,
+    train_val_test_split_policy_frame,
+)
+from insurabench.models.glm import GLMPricingModel
 
 __all__ = [
     "ClaimsSchema",
     "FeatureRole",
+    "GLMPricingModel",
     "InsurabenchError",
     "LinkingError",
     "PolicyFrame",
     "PolicyIdentityError",
     "PolicySchema",
     "SchemaError",
+    "train_test_split_policy_frame",
+    "train_val_test_split_policy_frame",
 ]
 
 __version__ = "0.1.0.dev0"

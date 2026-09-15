@@ -69,7 +69,11 @@ def make_synthetic_two_table(
     -------
     A ``SyntheticBook`` with policies, claims, and both schemas already
     configured to match the generated columns. The data is guaranteed to
-    pass ``insurabench.linking.validate_linkage`` as generated.
+    pass ``insurabench.linking.validate_linkage`` as generated, and carries
+    a small amount of deliberate, documented signal (young drivers and
+    high-powered vehicles claim more often; weather claims and the West
+    region run larger) -- enough that a fitted model has something
+    non-trivial to recover, not a realistic actuarial relationship.
     """
     rng = np.random.default_rng(seed)
 
@@ -101,18 +105,31 @@ def make_synthetic_two_table(
     claim_rows = []
     claim_id = 1
     for _, period in policies.iterrows():
-        n_claims = rng.poisson(claims_per_policy_lambda)
+        # Mild, deliberately simple synthetic signal -- young drivers and
+        # higher-powered vehicles claim more often -- so a fitted model has
+        # something non-trivial to recover. This is NOT meant to represent
+        # a real actuarial relationship; it exists purely so relativities
+        # and D^2 on this dataset aren't meaninglessly close to zero.
+        young_driver_multiplier = 2.0 if period["driver_age"] < 25 else 1.0
+        high_power_multiplier = 1.5 if period["vehicle_power"] > 10 else 1.0
+        expected_claims = claims_per_policy_lambda * young_driver_multiplier * high_power_multiplier
+        n_claims = rng.poisson(expected_claims)
         for _ in range(n_claims):
             offset_days = int(
                 rng.integers(0, (period["term_end"] - period["term_start"]).days)
             )
             peril = rng.choice(_PERILS)
+            # Weather claims run larger than other perils, and the West
+            # region runs somewhat larger than the rest -- again, a simple
+            # deliberate signal, not a realistic actuarial relationship.
+            severity_scale = 800.0 * (1.6 if peril == "weather" else 1.0)
+            severity_scale *= 1.3 if period["region"] == "West" else 1.0
             claim_rows.append(
                 {
                     "claim_id": claim_id,
                     "policy_id": period["policy_id"],
                     "claim_date": period["term_start"] + pd.Timedelta(days=offset_days),
-                    "claim_amount": round(float(rng.gamma(shape=2.0, scale=800.0)), 2),
+                    "claim_amount": round(float(rng.gamma(shape=2.0, scale=severity_scale)), 2),
                     "peril": peril,
                     "coverage": _PERIL_TO_COVERAGE[peril],
                 }

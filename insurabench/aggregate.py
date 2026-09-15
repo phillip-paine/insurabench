@@ -56,7 +56,7 @@ def _filter_claims(
     return claims
 
 
-def _match_claims_to_periods(
+def match_claims_to_periods(
     policies: pd.DataFrame,
     claims: pd.DataFrame,
     policy_schema: PolicySchema,
@@ -151,7 +151,7 @@ def to_frequency_frame(
     """
     claims = _filter_claims(claims, claims_schema, peril=peril, coverage=coverage)
     key_cols = policy_schema.period_key_cols
-    matched = _match_claims_to_periods(policies, claims, policy_schema, claims_schema)
+    matched = match_claims_to_periods(policies, claims, policy_schema, claims_schema)
 
     counts = matched.groupby(key_cols)[claims_schema.claim_id_col].count()
     out = policies.merge(
@@ -190,9 +190,9 @@ def to_severity_frame(
     claims = _filter_claims(claims, claims_schema, peril=peril, coverage=coverage)
     feature_cols = policy_schema.feature_cols
     key_cols = policy_schema.period_key_cols
-    matched = _match_claims_to_periods(policies, claims, policy_schema, claims_schema)
+    matched = match_claims_to_periods(policies, claims, policy_schema, claims_schema)
     # Join on the full period key (not just policy_id) -- a claim is already
-    # attributed to one specific policy-period by _match_claims_to_periods,
+    # attributed to one specific policy-period by match_claims_to_periods,
     # and joining on bare policy_id here would re-fan-out across every
     # renewal term that policy_id has, undoing that attribution.
     policy_side = policies[[*key_cols, *feature_cols]]
@@ -211,3 +211,41 @@ def to_severity_frame(
         cols.append(claims_schema.coverage_col)
     cols = list(dict.fromkeys(cols))
     return merged[cols].reset_index(drop=True)
+
+
+def to_pure_premium_frame(
+    policies: pd.DataFrame,
+    claims: pd.DataFrame,
+    policy_schema: PolicySchema,
+    claims_schema: ClaimsSchema,
+    *,
+    peril: str | list[str] | None = None,
+    coverage: str | list[str] | None = None,
+) -> pd.DataFrame:
+    """One row per policy-period: total claim amount (0 if none), exposure,
+    and rating factors.
+
+    This is the grain a Tweedie compound Poisson-Gamma GLM/GBM operates on
+    directly -- fit ``claim_amount_total / exposure`` as the response with
+    ``exposure`` as weight, modeling frequency and severity jointly in one
+    model rather than composing two separate ones (design brief §4 offers
+    frequency-severity composition as the alternative route; this is the
+    direct one). Like ``to_frequency_frame``, this is a left join from
+    ``policies`` -- a policy-period with no claims is kept with
+    ``claim_amount_total == 0``, never dropped.
+    """
+    claims = _filter_claims(claims, claims_schema, peril=peril, coverage=coverage)
+    key_cols = policy_schema.period_key_cols
+    matched = match_claims_to_periods(policies, claims, policy_schema, claims_schema)
+
+    totals = matched.groupby(key_cols)[claims_schema.claim_amount_col].sum()
+    out = policies.merge(
+        totals.rename("claim_amount_total"), left_on=key_cols, right_index=True, how="left"
+    )
+    out["claim_amount_total"] = out["claim_amount_total"].fillna(0.0)
+
+    cols = [*key_cols, policy_schema.exposure_col, *policy_schema.feature_cols, "claim_amount_total"]
+    if policy_schema.premium_col:
+        cols.append(policy_schema.premium_col)
+    cols = list(dict.fromkeys(cols))
+    return out[cols].reset_index(drop=True)

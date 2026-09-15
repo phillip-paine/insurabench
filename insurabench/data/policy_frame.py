@@ -13,7 +13,11 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from insurabench.aggregate import to_frequency_frame, to_severity_frame
+from insurabench.aggregate import (
+    to_frequency_frame,
+    to_pure_premium_frame,
+    to_severity_frame,
+)
 from insurabench.data.schema import ClaimsSchema, PolicySchema
 from insurabench.linking import LinkageReport, validate_linkage
 
@@ -106,6 +110,22 @@ class PolicyFrame:
         features, never rolled up. See design brief §3.3. ``peril``/
         ``coverage`` filter as in ``frequency_view``."""
         return to_severity_frame(
+            self.policies, self.claims, self.policy_schema, self.claims_schema,
+            peril=peril, coverage=coverage,
+        )
+
+    def pure_premium_view(
+        self,
+        *,
+        peril: str | list[str] | None = None,
+        coverage: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """One row per policy-period: total claim amount (0 if none),
+        exposure, features. This is what a direct Tweedie compound
+        Poisson-Gamma model consumes: fit ``claim_amount_total / exposure``
+        as the response with ``exposure`` as weight. ``peril``/``coverage``
+        filter as in ``frequency_view``."""
+        return to_pure_premium_frame(
             self.policies, self.claims, self.policy_schema, self.claims_schema,
             peril=peril, coverage=coverage,
         )
