@@ -254,3 +254,111 @@ def plot_stability_summary(
         ax.legend(loc="upper left")
         finalize(fig, save_path)
         return fig, ax
+
+
+def plot_rate_change_by_level(
+    table: pd.DataFrame,
+    *,
+    feature_name: str | None = None,
+    ax=None,
+    title: str | None = None,
+    save_path: str | None = None,
+):
+    """Aggregate rate change per level (bars, colored by direction) with
+    the split of each level's exposure that moves up vs. down annotated
+    on top -- the segment-level view of a repricing impact. Takes
+    ``rate_change_by_level``'s output directly.
+    """
+    with theme():
+        fig, ax = new_axes(ax, FIGSIZE)
+        x = np.arange(len(table))
+        pct = table["pct_change"].to_numpy() * 100
+        colors = [PALETTE["model_b"] if v >= 0 else PALETTE["fitted"] for v in pct]
+        ax.bar(x, pct, color=colors, zorder=2)
+        ax.axhline(0.0, color=PALETTE["reference"], linestyle="-", linewidth=1, zorder=1)
+
+        # Fix ylim to a data-range-proportional padding *before* placing
+        # the annotation text, and keep the text offset within that same
+        # padding -- otherwise a fixed absolute offset either sits on top
+        # of the bar (when the data range is tiny) or barely clears it
+        # (when huge), and in both cases can end up outside whatever
+        # ylim autoscale settles on, which then blows out the saved
+        # figure's canvas via savefig's bbox_inches="tight" instead of
+        # just clipping the text.
+        y_min, y_max = min(0.0, float(np.nanmin(pct))), max(0.0, float(np.nanmax(pct)))
+        pad = max((y_max - y_min) * 0.18, 0.05)
+        ax.set_ylim(y_min - pad * 1.6, y_max + pad * 1.6)
+
+        for xi, row in zip(x, table.itertuples(), strict=True):
+            up = row.pct_exposure_increasing
+            down = row.pct_exposure_decreasing
+            if np.isnan(up) or np.isnan(down):
+                continue
+            offset = pad if row.pct_change >= 0 else -pad
+            va = "bottom" if row.pct_change >= 0 else "top"
+            ax.text(
+                xi,
+                row.pct_change * 100 + offset,
+                f"{up:.0%} up / {down:.0%} down",
+                ha="center",
+                va=va,
+                fontsize=8,
+                color="#4D4D4D",
+            )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(table["level"], rotation=30, ha="right")
+        ax.set_ylabel("Aggregate rate change (%)")
+        ax.set_xlabel(feature_name or "Level")
+        ax.set_title(title or (f"Rate change: {feature_name}" if feature_name else "Rate change by level"))
+        finalize(fig, save_path)
+        return fig, ax
+
+
+def plot_rate_change_distribution(
+    table: pd.DataFrame,
+    *,
+    ax=None,
+    title: str | None = None,
+    save_path: str | None = None,
+):
+    """Exposure share by rate-change band, ascending -- the whole-book
+    disruption summary ("what % of the book sees more than a 10%
+    increase?"). Takes ``rate_change_distribution``'s output directly.
+    Bars for a decreasing-rate band are shaded blue, increasing-rate red,
+    and the (rare, usually empty) "undefined" band gray -- inferred from
+    each band's label, since the table itself only carries the label
+    string.
+    """
+    with theme():
+        fig, ax = new_axes(ax, FIGSIZE)
+        x = np.arange(len(table))
+
+        def _color(label: str) -> str:
+            if label.startswith("undefined"):
+                return PALETTE["exposure"]
+            # label looks like "(-10%, -5%]" or "(+5%, +10%]" -- sign of
+            # the upper (second) edge decides which side of 0% it's on.
+            upper = label.split(",")[1].strip(" ]%")
+            return PALETTE["fitted"] if upper.startswith("-") else PALETTE["model_b"]
+
+        colors = [_color(label) for label in table["band"]]
+        bars = ax.bar(x, table["exposure_share"] * 100, color=colors, zorder=2)
+        for bar, share in zip(bars, table["exposure_share"], strict=True):
+            if share > 0:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.5,
+                    f"{share:.0%}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=9,
+                )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(table["band"], rotation=30, ha="right")
+        ax.set_ylabel("Share of exposure (%)")
+        ax.set_xlabel("Rate change band")
+        ax.set_title(title or "Rate change distribution")
+        finalize(fig, save_path)
+        return fig, ax

@@ -260,3 +260,87 @@ def test_split_relativities_length_mismatch_raises(toy_frequency_pf):
         split_relativities(
             toy_frequency_pf, "region", "frequency", np.zeros(4), split=np.array([0, 1])
         )
+
+
+# --- rate_impact --------------------------------------------------------------
+
+from insurabench.evaluation.rate_impact import (
+    rate_change_by_level,
+    rate_change_distribution,
+)
+
+
+def test_rate_change_by_level_reveals_split_hidden_by_aggregate(toy_frequency_pf):
+    # Same fixture/predictions as the double_lift tests: new rate =
+    # [1.0, 2.0, 0.25, 0.75], old rate = [0.5, 1.0, 0.5, 0.5] for
+    # p1,p2,p3,p4. Row-level pct change: p1/p2 = +100%, p3 = -50%,
+    # p4 = +50%.
+    y_new = np.array([1.0, 2.0, 0.5, 1.5])
+    y_old = np.array([0.5, 1.0, 1.0, 1.0])
+
+    table = rate_change_by_level(toy_frequency_pf, "region", "frequency", y_new, y_old).set_index(
+        "level"
+    )
+
+    # region A = {p1, p2}, both weight 1, both +100% -> aggregate and
+    # individual agree perfectly here.
+    assert table.loc["A", "old_rate"] == pytest.approx(0.75)  # (0.5+1.0)/2
+    assert table.loc["A", "new_rate"] == pytest.approx(1.5)  # (1.0+2.0)/2
+    assert table.loc["A", "pct_change"] == pytest.approx(1.0)
+    assert table.loc["A", "pct_exposure_increasing"] == pytest.approx(1.0)
+    assert table.loc["A", "pct_exposure_decreasing"] == pytest.approx(0.0)
+
+    # region B = {p3 (-50%, weight 2), p4 (+50%, weight 2)}: the two
+    # moves exactly cancel in aggregate (old_rate == new_rate == 0.5,
+    # pct_change == 0%) even though every single policy-period in the
+    # region moved -- this is exactly the case
+    # pct_exposure_increasing/decreasing exists to surface.
+    assert table.loc["B", "old_rate"] == pytest.approx(0.5)  # (1.0+1.0)/4
+    assert table.loc["B", "new_rate"] == pytest.approx(0.5)  # (0.5+1.5)/4
+    assert table.loc["B", "pct_change"] == pytest.approx(0.0)
+    assert table.loc["B", "pct_exposure_increasing"] == pytest.approx(0.5)
+    assert table.loc["B", "pct_exposure_decreasing"] == pytest.approx(0.5)
+
+
+def test_rate_change_by_level_length_mismatch_raises(toy_frequency_pf):
+    with pytest.raises(ValueError, match="row.s. but the"):
+        rate_change_by_level(
+            toy_frequency_pf,
+            "region",
+            "frequency",
+            np.array([1.0, 2.0, 0.5, 1.5]),
+            np.array([1.0, 2.0, 0.5]),
+        )
+
+
+def test_rate_change_distribution_hand_computed(toy_frequency_pf):
+    # Row-level pct changes: p1=+100%, p2=+100%, p3=-50%, p4=+50%,
+    # weights [1,1,2,2], total weight 6.
+    y_new = np.array([1.0, 2.0, 0.5, 1.5])
+    y_old = np.array([0.5, 1.0, 1.0, 1.0])
+
+    table = rate_change_distribution(toy_frequency_pf, "frequency", y_new, y_old).set_index("band")
+
+    # p3 (-50%, weight 2) falls in (-100%, -20%]
+    assert table.loc["(-100%, -20%]", "exposure"] == pytest.approx(2.0)
+    assert table.loc["(-100%, -20%]", "exposure_share"] == pytest.approx(2 / 6)
+    # p1, p2, p4 (all >= +50%, weight 1+1+2=4) fall in (+20%, +inf]
+    assert table.loc["(+20%, +inf]", "exposure"] == pytest.approx(4.0)
+    assert table.loc["(+20%, +inf]", "exposure_share"] == pytest.approx(4 / 6)
+    # every other band is empty
+    other_bands = table.drop(index=["(-100%, -20%]", "(+20%, +inf]"])
+    assert (other_bands["exposure"] == 0).all()
+    # shares always sum to 1.0 across the whole table
+    assert table["exposure_share"].sum() == pytest.approx(1.0)
+
+
+def test_rate_change_distribution_reports_undefined_band(toy_frequency_pf):
+    # Force p1's old rate to exactly 0 (undefined pct change) by giving
+    # it a 0 predicted count in y_old.
+    y_new = np.array([1.0, 2.0, 0.5, 1.5])
+    y_old = np.array([0.0, 1.0, 1.0, 1.0])
+
+    table = rate_change_distribution(toy_frequency_pf, "frequency", y_new, y_old).set_index("band")
+
+    assert table.loc["undefined (old rate = 0)", "exposure"] == pytest.approx(1.0)  # p1's weight
+    assert table["exposure_share"].sum() == pytest.approx(1.0)

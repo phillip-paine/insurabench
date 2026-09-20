@@ -21,6 +21,10 @@ from insurabench.evaluation.calibration import calibration_table
 from insurabench.evaluation.double_lift import double_lift_chart
 from insurabench.evaluation.gini import gini_curve
 from insurabench.evaluation.lift import lift_chart
+from insurabench.evaluation.rate_impact import (
+    rate_change_by_level,
+    rate_change_distribution,
+)
 from insurabench.evaluation.stability import bootstrap_relativities, stability_summary
 from insurabench.viz import (
     plot_calibration_table,
@@ -28,6 +32,8 @@ from insurabench.viz import (
     plot_gini_curve,
     plot_lift_chart,
     plot_one_way_curve,
+    plot_rate_change_by_level,
+    plot_rate_change_distribution,
     plot_relativity_table,
     plot_stability_summary,
     plot_two_way_curve,
@@ -164,3 +170,53 @@ def test_plot_stability_summary_structure(toy_frequency_pf):
     _fig, ax = plot_stability_summary(summary)
     assert [t.get_text() for t in ax.get_xticklabels()] == list(summary["level"])
     assert ax.get_ylabel() == "Relativity"
+
+
+def test_plot_rate_change_by_level_structure(toy_frequency_pf):
+    table = rate_change_by_level(
+        toy_frequency_pf,
+        "region",
+        "frequency",
+        np.array([1.0, 2.0, 0.5, 1.5]),
+        np.array([0.5, 1.0, 1.0, 1.0]),
+    )
+    _fig, ax = plot_rate_change_by_level(table, feature_name="region")
+
+    assert len(ax.patches) == 2  # one bar per region level
+    assert len(ax.texts) == 2  # one "up/down" annotation per bar
+    # every annotation must land within the axes' own ylim -- this is
+    # exactly the bug that was caught and fixed (annotations drifting
+    # outside a data-range-proportional padding and blowing out the
+    # saved canvas via bbox_inches="tight").
+    y_min, y_max = ax.get_ylim()
+    for txt in ax.texts:
+        _, y = txt.get_position()
+        assert y_min <= y <= y_max
+
+
+def test_plot_rate_change_by_level_saves_file(toy_frequency_pf, tmp_path):
+    table = rate_change_by_level(
+        toy_frequency_pf,
+        "region",
+        "frequency",
+        np.array([1.0, 2.0, 0.5, 1.5]),
+        np.array([0.5, 1.0, 1.0, 1.0]),
+    )
+    out = tmp_path / "rate_change.png"
+    plot_rate_change_by_level(table, save_path=str(out))
+    assert out.exists()
+    assert out.stat().st_size > 0
+
+
+def test_plot_rate_change_distribution_structure(toy_frequency_pf):
+    table = rate_change_distribution(
+        toy_frequency_pf,
+        "frequency",
+        np.array([1.0, 2.0, 0.5, 1.5]),
+        np.array([0.5, 1.0, 1.0, 1.0]),
+    )
+    _fig, ax = plot_rate_change_distribution(table)
+    assert len(ax.patches) == len(table)  # one bar per band
+    # only bands with nonzero share get a text label
+    nonzero_bands = int((table["exposure_share"] > 0).sum())
+    assert len(ax.texts) == nonzero_bands

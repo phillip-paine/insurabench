@@ -31,6 +31,8 @@ from insurabench.viz.evaluation import (
     plot_double_lift_chart,
     plot_gini_curve,
     plot_lift_chart,
+    plot_rate_change_by_level,
+    plot_rate_change_distribution,
     plot_stability_summary,
 )
 from insurabench.viz.theme import PALETTE, theme
@@ -42,6 +44,8 @@ __all__ = [
     "plot_gini_curve",
     "plot_lift_chart",
     "plot_one_way_curve",
+    "plot_rate_change_by_level",
+    "plot_rate_change_distribution",
     "plot_relativity_table",
     "plot_stability_summary",
     "plot_two_way_curve",
