@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from insurabench.curves.one_way import one_way_curve
+from insurabench.curves.partial_dependence import partial_dependence
 from insurabench.curves.relativity_table import relativity_table
 from insurabench.curves.two_way import two_way_curve
 from insurabench.evaluation.calibration import calibration_table
@@ -32,6 +33,7 @@ from insurabench.viz import (
     plot_gini_curve,
     plot_lift_chart,
     plot_one_way_curve,
+    plot_partial_dependence,
     plot_rate_change_by_level,
     plot_rate_change_distribution,
     plot_relativity_table,
@@ -220,3 +222,43 @@ def test_plot_rate_change_distribution_structure(toy_frequency_pf):
     # only bands with nonzero share get a text label
     nonzero_bands = int((table["exposure_share"] > 0).sum())
     assert len(ax.texts) == nonzero_bands
+
+
+class _StubRateModel:
+    """Minimal PricingModel-shaped stand-in (mirrors tests/test_curves.py's
+    stub) -- predicts a fixed rate per region, scaled to the count scale
+    by offset. Used here only to exercise plot_partial_dependence without
+    depending on glum.
+    """
+
+    def __init__(self, rates: dict[str, float]):
+        self.rates = rates
+
+    def predict(self, X, *, offset=None):
+        base_rate = X["region"].map(self.rates).to_numpy(dtype=float)
+        if offset is None:
+            return base_rate
+        return base_rate * np.exp(np.asarray(offset))
+
+
+def test_plot_partial_dependence_structure(toy_frequency_pf):
+    model = _StubRateModel(rates={"A": 1.0, "B": 3.0})
+    pdp = partial_dependence(toy_frequency_pf, "region", "frequency", model)
+    fig, ax = plot_partial_dependence(pdp, feature_name="region")
+
+    assert len(fig.axes) == 1  # no exposure axis here, unlike plot_one_way_curve
+    assert len(ax.lines) == 1  # a single fitted line, no observed/CI band
+    assert [t.get_text() for t in ax.get_xticklabels()] == list(pdp["level"])
+    assert ax.get_xlabel() == "region"
+    assert ax.get_ylabel() == "Partial dependence (rate)"
+    # the line's y-data must match the pdp values exactly (values 1.0, 3.0)
+    assert np.allclose(ax.lines[0].get_ydata(), pdp["partial_dependence"])
+
+
+def test_plot_partial_dependence_saves_file(toy_frequency_pf, tmp_path):
+    model = _StubRateModel(rates={"A": 1.0, "B": 3.0})
+    pdp = partial_dependence(toy_frequency_pf, "region", "frequency", model)
+    out = tmp_path / "pdp.png"
+    plot_partial_dependence(pdp, save_path=str(out))
+    assert out.exists()
+    assert out.stat().st_size > 0

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from insurabench.viz.curves import (
     plot_one_way_curve,
+    plot_partial_dependence,
     plot_relativity_table,
     plot_two_way_curve,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "plot_gini_curve",
     "plot_lift_chart",
     "plot_one_way_curve",
+    "plot_partial_dependence",
     "plot_rate_change_by_level",
     "plot_rate_change_distribution",
     "plot_relativity_table",

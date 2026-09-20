@@ -185,3 +185,36 @@ def plot_relativity_table(
         fig.suptitle(title or "Relativity table", fontsize=14, fontweight="bold")
         finalize(fig, save_path)
         return fig, axes
+
+
+def plot_partial_dependence(
+    pdp: pd.DataFrame,
+    *,
+    feature_name: str | None = None,
+    ax=None,
+    title: str | None = None,
+    save_path: str | None = None,
+):
+    """The model's own fitted relationship to one feature, isolated from
+    every other feature's real correlation with it. Takes
+    ``partial_dependence``'s output directly.
+
+    Deliberately sparser than ``plot_one_way_curve``: there's no
+    "observed" line, no confidence band, and no exposure bars here --
+    ``partial_dependence`` re-scores the *entire* book at each grid
+    value in turn rather than grouping actual rows by their own value of
+    the feature, so there's no per-level actual outcome or per-level
+    exposure to show alongside it. This is a statement about what the
+    model does, not about the data -- a single fitted line.
+    """
+    with theme():
+        fig, ax = new_axes(ax, FIGSIZE)
+        x = _set_level_ticks(ax, pdp["level"])
+        ax.plot(x, pdp["partial_dependence"], marker="o", color=PALETTE["fitted"], zorder=3)
+        ax.set_ylabel("Partial dependence (rate)")
+        ax.set_xlabel(feature_name or "Level")
+        ax.set_title(
+            title or (f"Partial dependence: {feature_name}" if feature_name else "Partial dependence")
+        )
+        finalize(fig, save_path)
+        return fig, ax
