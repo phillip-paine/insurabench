@@ -96,15 +96,6 @@ def one_way_curve(
     standard convention and keep every bin's confidence band at a
     comparable, non-tiny sample size even when exposure is very unevenly
     distributed across a continuous factor.
-    :param confidence:
-    :param binning:
-    :param n_bins:
-    :param coverage:
-    :param peril:
-    :param y_pred:
-    :param target:
-    :param feature:
-    :param pf:
     """
     if feature not in pf.policy_schema.feature_roles:
         raise ValueError(
