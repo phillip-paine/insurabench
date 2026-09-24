@@ -15,6 +15,7 @@ tied to insurabench's own data types.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -95,3 +96,54 @@ def prepare_features(df: pd.DataFrame, feature_roles: dict[str, FeatureRole]) ->
         else:
             out[col] = pd.to_numeric(df[col])
     return pd.DataFrame(out, index=df.index)[ordered_cols]
+
+
+Target = Literal["frequency", "severity", "pure_premium"]
+
+
+def build_design(
+    pf,
+    target: Target,
+    *,
+    peril: str | list[str] | None,
+    coverage: str | list[str] | None,
+    for_predict: bool = False,
+) -> tuple[pd.DataFrame, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
+    """Shared ``(X, y, sample_weight, offset)`` construction for any wrapped
+    model type's ``fit_policy_frame``/``predict_policy_frame``/
+    ``score_policy_frame`` (originally lived only in ``models/glm.py`` --
+    factored out here once ``models/gbm.py`` needed the exact same logic,
+    so the two model types can't quietly drift apart on how a target is
+    built, the same way ``curves._common.build_target_frame`` keeps every
+    curve/evaluation function aligned).
+
+    target:
+      - ``"frequency"`` -- ``claim_count`` ~ features, with
+        ``offset=log(exposure)``.
+      - ``"severity"`` -- ``claim_amount`` ~ features, one row per claim.
+      - ``"pure_premium"`` -- total claim amount per unit exposure ~
+        features, with ``sample_weight=exposure``.
+
+    When ``for_predict``, ``y`` is omitted (not needed to build X).
+    """
+    if target == "frequency":
+        df = pf.frequency_view(peril=peril, coverage=coverage)
+        X = prepare_features(df, pf.policy_schema.feature_roles)
+        y = None if for_predict else df["claim_count"].to_numpy()
+        offset = np.log(df[pf.policy_schema.exposure_col].to_numpy())
+        return X, y, None, offset
+
+    if target == "severity":
+        df = pf.severity_view(peril=peril, coverage=coverage)
+        X = prepare_features(df, pf.policy_schema.feature_roles)
+        y = None if for_predict else df[pf.claims_schema.claim_amount_col].to_numpy()
+        return X, y, None, None
+
+    if target == "pure_premium":
+        df = pf.pure_premium_view(peril=peril, coverage=coverage)
+        X = prepare_features(df, pf.policy_schema.feature_roles)
+        exposure = df[pf.policy_schema.exposure_col].to_numpy()
+        y = None if for_predict else df["claim_amount_total"].to_numpy() / exposure
+        return X, y, exposure, None
+
+    raise ValueError(f"Unknown target: {target!r}. Choose 'frequency', 'severity', or 'pure_premium'.")

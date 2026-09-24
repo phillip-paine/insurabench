@@ -16,10 +16,9 @@ import pandas as pd
 from glum import GeneralizedLinearRegressor, TweedieDistribution
 
 from insurabench.data.policy_frame import PolicyFrame
-from insurabench.models.base import PricingModel, prepare_features
+from insurabench.models.base import PricingModel, Target, build_design
 
 Family = Literal["poisson", "gamma", "tweedie", "negative_binomial", "normal"]
-Target = Literal["frequency", "severity", "pure_premium"]
 
 _FAMILY_STRINGS = {
     "poisson": "poisson",
@@ -188,7 +187,7 @@ class GLMPricingModel(PricingModel):
         ``PolicyFrame.frequency_view``/``severity_view``/``pure_premium_view``)
         to fit a peril- or coverage-specific model.
         """
-        X, y, sample_weight, offset = _build_design(pf, target, peril=peril, coverage=coverage)
+        X, y, sample_weight, offset = build_design(pf, target, peril=peril, coverage=coverage)
         self.target_ = target
         self.peril_ = peril
         self.coverage_ = coverage
@@ -206,7 +205,7 @@ class GLMPricingModel(PricingModel):
         """
         if self.target_ is None:
             raise RuntimeError("Call fit_policy_frame before predict_policy_frame.")
-        X, _, _, offset = _build_design(
+        X, _, _, offset = build_design(
             pf, self.target_, peril=self.peril_, coverage=self.coverage_, for_predict=True
         )
         return self.predict(X, offset=offset)
@@ -217,42 +216,8 @@ class GLMPricingModel(PricingModel):
         ``fit_policy_frame``."""
         if self.target_ is None:
             raise RuntimeError("Call fit_policy_frame before score_policy_frame.")
-        X, y, sample_weight, offset = _build_design(
+        X, y, sample_weight, offset = build_design(
             pf, self.target_, peril=self.peril_, coverage=self.coverage_
         )
         return self.score(X, y, sample_weight=sample_weight, offset=offset)
 
-
-def _build_design(
-    pf: PolicyFrame,
-    target: Target,
-    *,
-    peril: str | list[str] | None,
-    coverage: str | list[str] | None,
-    for_predict: bool = False,
-) -> tuple[pd.DataFrame, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
-    """Shared (X, y, sample_weight, offset) construction for both
-    ``fit_policy_frame`` and ``predict_policy_frame``/``score_policy_frame``,
-    so the two can never quietly drift out of sync on how a target is
-    built. When ``for_predict``, y is omitted (not needed to build X)."""
-    if target == "frequency":
-        df = pf.frequency_view(peril=peril, coverage=coverage)
-        X = prepare_features(df, pf.policy_schema.feature_roles)
-        y = None if for_predict else df["claim_count"].to_numpy()
-        offset = np.log(df[pf.policy_schema.exposure_col].to_numpy())
-        return X, y, None, offset
-
-    if target == "severity":
-        df = pf.severity_view(peril=peril, coverage=coverage)
-        X = prepare_features(df, pf.policy_schema.feature_roles)
-        y = None if for_predict else df[pf.claims_schema.claim_amount_col].to_numpy()
-        return X, y, None, None
-
-    if target == "pure_premium":
-        df = pf.pure_premium_view(peril=peril, coverage=coverage)
-        X = prepare_features(df, pf.policy_schema.feature_roles)
-        exposure = df[pf.policy_schema.exposure_col].to_numpy()
-        y = None if for_predict else df["claim_amount_total"].to_numpy() / exposure
-        return X, y, exposure, None
-
-    raise ValueError(f"Unknown target: {target!r}. Choose 'frequency', 'severity', or 'pure_premium'.")

@@ -1,19 +1,45 @@
-"""insurabench: end-to-end non-life insurance statistical modeling for data scientists.
+"""insurabench: end-to-end non-life insurance statistical modeling for
+data scientists.
 
 Implemented so far (see the project's build order): the data layer
-(``PolicyFrame`` and friends), the GLM wrapper, and -- proven against that
-GLM wrapper -- the core of the curves and evaluation layers
-(``one_way_curve``, ``relativity_table``, ``lift_chart``, ``gini_index``).
-Not yet built: ``curves.two_way``/``curves.partial_dependence``,
-``evaluation.double_lift``/``calibration``/``stability``, the GBM wrapper,
-geo, and reporting.
+(``PolicyFrame`` and friends), two swappable pricing model wrappers
+(``GLMPricingModel``, ``GBMPricingModel`` -- the latter including the
+zero-inflated Poisson boosted tree from So (2024) for frequency), and
+the full curves and evaluation layers, proven model-agnostic against
+both wrappers -- one-way/two-way curves, partial dependence, relativity
+tables, lift/double-lift/Gini/calibration/stability, and repricing
+rate-impact analysis -- plus a matching ``insurabench.viz`` plotting
+layer for all of it. Not yet built: geo, reporting, and the fairness
+stub.
+
+This top-level module re-exports the most commonly used names from each
+layer; the submodules (``insurabench.curves``, ``insurabench.evaluation``,
+``insurabench.viz``, ``insurabench.models``) are the complete, canonical
+list in each case.
 """
 from __future__ import annotations
 
-from insurabench.curves import one_way_curve, relativity_table
+from insurabench.curves import (
+    one_way_curve,
+    partial_dependence,
+    relativity_table,
+    two_way_curve,
+)
 from insurabench.data.policy_frame import PolicyFrame
 from insurabench.data.schema import ClaimsSchema, FeatureRole, PolicySchema
-from insurabench.evaluation import gini_curve, gini_index, lift_chart
+from insurabench.evaluation import (
+    bootstrap_relativities,
+    calibration_index,
+    calibration_table,
+    double_lift_chart,
+    gini_curve,
+    gini_index,
+    lift_chart,
+    rate_change_by_level,
+    rate_change_distribution,
+    split_relativities,
+    stability_summary,
+)
 from insurabench.exceptions import (
     InsurabenchError,
     LinkingError,
@@ -24,11 +50,13 @@ from insurabench.model_selection import (
     train_test_split_policy_frame,
     train_val_test_split_policy_frame,
 )
+from insurabench.models.gbm import GBMPricingModel
 from insurabench.models.glm import GLMPricingModel
 
 __all__ = [
     "ClaimsSchema",
     "FeatureRole",
+    "GBMPricingModel",
     "GLMPricingModel",
     "InsurabenchError",
     "LinkingError",
@@ -36,13 +64,23 @@ __all__ = [
     "PolicyIdentityError",
     "PolicySchema",
     "SchemaError",
+    "bootstrap_relativities",
+    "calibration_index",
+    "calibration_table",
+    "double_lift_chart",
     "gini_curve",
     "gini_index",
     "lift_chart",
     "one_way_curve",
+    "partial_dependence",
+    "rate_change_by_level",
+    "rate_change_distribution",
     "relativity_table",
+    "split_relativities",
+    "stability_summary",
     "train_test_split_policy_frame",
     "train_val_test_split_policy_frame",
+    "two_way_curve",
 ]
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.2.0.dev0"
