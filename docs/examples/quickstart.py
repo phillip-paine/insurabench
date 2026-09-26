@@ -38,6 +38,7 @@ from insurabench.evaluation import (
 )
 from insurabench.model_selection import train_test_split_policy_frame
 from insurabench.models.glm import GLMPricingModel
+from insurabench.reporting import export_rating_table, generate_model_card
 from insurabench.viz import (
     plot_calibration_table,
     plot_double_lift_chart,
@@ -135,7 +136,14 @@ def main(n_policies: int, seed: int, output_dir: Path) -> None:
     )
     plot_rate_change_distribution(distribution, save_path=str(output_dir / "rate_change_distribution.png"))
 
-    print(f"\nDone. Wrote charts and relativity_table.csv to {output_dir}/")
+    # --- Reporting: model card + rating-table export --------------------------
+    print("Generating model card and rating-table export...")
+    card = generate_model_card(model, "frequency", test_pf, train_pf=train_pf)
+    (output_dir / "model_card.md").write_text(card.to_markdown())
+    export_rating_table(test_pf, "frequency", y_pred, output_dir / "rating_table.xlsx")
+
+    print(f"\nDone. Wrote charts, relativity_table.csv, model_card.md, and "
+          f"rating_table.xlsx to {output_dir}/")
 
 
 if __name__ == "__main__":

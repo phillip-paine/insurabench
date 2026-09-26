@@ -101,6 +101,50 @@ def prepare_features(df: pd.DataFrame, feature_roles: dict[str, FeatureRole]) ->
 Target = Literal["frequency", "severity", "pure_premium"]
 
 
+def _poisson_unit_deviance(y: np.ndarray, mu: np.ndarray) -> np.ndarray:
+    """Standard Poisson unit deviance. Originally private to
+    ``models/gbm.py`` (``GBMPricingModel.score``'s poisson-family branch);
+    moved here once ``models/frequency_severity.py`` needed a *Tweedie*
+    unit deviance from the same family of formulas for its own D²
+    computation -- same rationale as ``build_design`` living here rather
+    than in ``models/glm.py``, so the formula has exactly one home rather
+    than risking two copies drifting apart. ``models/gbm.py`` imports this
+    back in under its own name so existing call sites (including
+    ``tests/test_gbm.py``, which imports it directly from
+    ``insurabench.models.gbm``) are unaffected.
+    """
+    mu = np.clip(mu, 1e-10, None)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        term = np.where(y > 0, y * np.log(y / mu), 0.0)
+    return 2.0 * (term - (y - mu))
+
+
+def _tweedie_unit_deviance(y: np.ndarray, mu: np.ndarray, power: float) -> np.ndarray:
+    """Standard Tweedie unit deviance (the same formula glum uses
+    internally for its own Tweedie ``score``). See ``_poisson_unit_deviance``
+    for why this lives here rather than in ``models/gbm.py``, which is
+    where it originally lived (used there for the ``family="tweedie"``/
+    ``family="gamma"`` score branches) before
+    ``models/frequency_severity.py`` needed the same formula for a
+    composed model's D² -- a composed frequency-severity model's pure
+    premium is scored on this same Tweedie deviance scale so it is
+    directly D²-comparable to a direct single-model Tweedie fit
+    (``GLMPricingModel``/``GBMPricingModel`` with ``target="pure_premium"``).
+    """
+    mu = np.clip(mu, 1e-10, None)
+    if power == 2:
+        # Gamma deviance: 2*(y/mu - ln(y/mu) - 1) for y > 0.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(y > 0, y / mu, 1.0)
+            dev = np.where(y > 0, ratio - np.log(ratio) - 1.0, 0.0)
+        return 2.0 * dev
+    y_clip = np.clip(y, 0, None)
+    a = y_clip ** (2 - power) / ((1 - power) * (2 - power))
+    b = y * mu ** (1 - power) / (1 - power)
+    c = mu ** (2 - power) / (2 - power)
+    return 2.0 * (a - b + c)
+
+
 def build_design(
     pf,
     target: Target,

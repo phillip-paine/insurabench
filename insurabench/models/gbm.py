@@ -43,7 +43,13 @@ import pandas as pd
 from catboost import CatBoostRegressor, Pool
 
 from insurabench.data.policy_frame import PolicyFrame
-from insurabench.models.base import PricingModel, Target, build_design
+from insurabench.models.base import (
+    PricingModel,
+    Target,
+    _poisson_unit_deviance,
+    _tweedie_unit_deviance,
+    build_design,
+)
 
 Family = Literal["poisson", "zip", "gamma", "tweedie"]
 
@@ -214,13 +220,6 @@ def _cat_feature_names(X: pd.DataFrame) -> list[str]:
     return [c for c in X.columns if isinstance(X[c].dtype, pd.CategoricalDtype)]
 
 
-def _poisson_unit_deviance(y: np.ndarray, mu: np.ndarray) -> np.ndarray:
-    mu = np.clip(mu, 1e-10, None)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        term = np.where(y > 0, y * np.log(y / mu), 0.0)
-    return 2.0 * (term - (y - mu))
-
-
 def _zip_unit_deviance(y: np.ndarray, mu: np.ndarray, p: np.ndarray) -> np.ndarray:
     """So (2024) §4.1.1's zero-inflated Poisson unit deviance. ``p`` may
     be a scalar (the null/base-rate model, p_bar=0.5 per the paper) or an
@@ -240,29 +239,6 @@ def _zip_unit_deviance(y: np.ndarray, mu: np.ndarray, p: np.ndarray) -> np.ndarr
             y_pos * np.log(y_pos) - y_pos - np.log(1 - p_pos) - y_pos * np.log(mu_pos) + mu_pos
         )
     return out
-
-
-def _tweedie_unit_deviance(y: np.ndarray, mu: np.ndarray, power: float) -> np.ndarray:
-    """Standard Tweedie unit deviance (the same formula glum uses
-    internally for its own Tweedie ``score``) -- not from So (2024), used
-    for the ``family="tweedie"`` (severity/pure_premium) case so
-    ``score``/``score_policy_frame`` has a well-defined D² there too.
-    """
-    mu = np.clip(mu, 1e-10, None)
-    if power == 2:
-        # Gamma deviance: 2*(y/mu - ln(y/mu) - 1) for y > 0. y == 0 isn't
-        # expected for a severity target (a claim's amount is never
-        # exactly 0 by construction) but is guarded rather than left to
-        # raise on log(0) if it ever occurs.
-        with np.errstate(divide="ignore", invalid="ignore"):
-            ratio = np.where(y > 0, y / mu, 1.0)
-            dev = np.where(y > 0, ratio - np.log(ratio) - 1.0, 0.0)
-        return 2.0 * dev
-    y_clip = np.clip(y, 0, None)
-    a = y_clip ** (2 - power) / ((1 - power) * (2 - power))
-    b = y * mu ** (1 - power) / (1 - power)
-    c = mu ** (2 - power) / (2 - power)
-    return 2.0 * (a - b + c)
 
 
 class GBMPricingModel(PricingModel):

@@ -4,11 +4,12 @@ insurabench does not reimplement GLM fitting; glum already handles
 Poisson/Gamma/Tweedie/Negative-Binomial families, native exposure
 offsets/weights, elastic-net regularization, and standard errors, and does
 it well. This wrapper's job is to plug that engine into insurabench's
-PolicyFrame / PricingModel contract, and to close off one specific glum
-footgun (see ``_resolve_family``).
+PolicyFrame / PricingModel contract, and to close off specific glum
+footguns (see ``_resolve_family``, and ``information_criteria`` below).
 """
 from __future__ import annotations
 
+import warnings
 from typing import Literal
 
 import numpy as np
@@ -159,6 +160,56 @@ class GLMPricingModel(PricingModel):
         step 3, not built yet)."""
         return self._estimator.score(X, y, sample_weight=sample_weight, offset=offset)
 
+    def information_criteria(self, X, y, *, sample_weight=None, offset=None) -> tuple[float, float]:
+        """(AIC, BIC), for reporting (design brief §8's ``model_card.py``).
+
+        Deliberately NOT a thin call to glum's own ``.aic()``/``.bic()``.
+        Those methods' signature has no ``offset`` parameter at all, and
+        internally recompute mu via a bare ``self.predict(X)`` with no
+        offset applied -- confirmed directly, not assumed: on a synthetic
+        offset-fit Poisson model, glum's native ``.aic()`` differs from
+        the correctly-offset-adjusted value by several percent, not a
+        rounding-level difference, because the log-likelihood is
+        evaluated at the wrong mu whenever the model was fit with an
+        offset (i.e. any ``target="frequency"`` fit -- design brief §9.1's
+        exposure-weighting-must-be-structural principle applies here too:
+        an offset silently dropped from a diagnostic is the same failure
+        mode as exposure silently dropped from a fit). This method
+        instead recomputes AIC/BIC from the fitted family's own
+        ``log_likelihood``, evaluated at ``self.predict(X, offset=offset)``
+        -- the same offset-aware call site ``fit``/``predict``/``score``
+        already use -- so it's correct for every target
+        (``target="severity"``/``"pure_premium"`` have no offset to begin
+        with, so are unaffected by this bug either way; this method is
+        just as correct for them).
+
+        Degrees-of-freedom / effective-parameter-count convention
+        (non-zero coefficients + intercept) matches glum's own
+        ``_compute_information_criteria`` exactly -- only the mu it's
+        evaluated against differs. Same caveat glum itself raises applies
+        here: under L2 (ridge)/elastic-net regularization, there's no
+        general definition of a model's degrees of freedom, so AIC/BIC
+        may not be well defined -- warns in that case, matching glum's own
+        behavior.
+        """
+        if (self.alpha is not None and self.alpha > 0) and self.l1_ratio < 1.0:
+            warnings.warn(
+                "There is no general definition for the model's degrees of "
+                "freedom under L2 (ridge) regularisation. AIC/BIC might not "
+                "be well defined in these cases.",
+                stacklevel=2,
+            )
+        mu = self.predict(X, offset=offset)
+        y_arr = np.asarray(y, dtype=float)
+        ll = self._estimator.family_instance.log_likelihood(y_arr, mu, sample_weight=sample_weight)
+        coef = np.asarray(self._estimator.coef_)
+        ddof = int(np.sum(np.abs(coef) > np.finfo(coef.dtype).eps))
+        k_params = ddof + int(self.fit_intercept)
+        nobs = len(y_arr)
+        aic = float(-2 * ll + 2 * k_params)
+        bic = float(-2 * ll + np.log(nobs) * k_params)
+        return aic, bic
+
     # -- PolicyFrame convenience ------------------------------------------------
 
     def fit_policy_frame(
@@ -220,4 +271,15 @@ class GLMPricingModel(PricingModel):
             pf, self.target_, peril=self.peril_, coverage=self.coverage_
         )
         return self.score(X, y, sample_weight=sample_weight, offset=offset)
+
+    def information_criteria_policy_frame(self, pf: PolicyFrame) -> tuple[float, float]:
+        """(AIC, BIC) (see ``information_criteria``) on a (typically
+        held-out) PolicyFrame, using the target/peril/coverage set by
+        ``fit_policy_frame``."""
+        if self.target_ is None:
+            raise RuntimeError("Call fit_policy_frame before information_criteria_policy_frame.")
+        X, y, sample_weight, offset = build_design(
+            pf, self.target_, peril=self.peril_, coverage=self.coverage_
+        )
+        return self.information_criteria(X, y, sample_weight=sample_weight, offset=offset)
 
