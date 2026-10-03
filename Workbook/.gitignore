@@ -2,3 +2,9 @@
 catboost_info/
 rating_table.xlsx
 .ipynb_checkpoints/
+
+# The root .gitignore's blanket `*.csv` rule (no committed insurance
+# data, by design) would otherwise also swallow these two -- but they
+# ARE meant to be committed: they're the fixed sample data notebook 01
+# reads, not generated output. Re-included here deliberately.
+!data/*.csv
