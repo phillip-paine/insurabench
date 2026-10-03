@@ -262,3 +262,28 @@ def test_plot_partial_dependence_saves_file(toy_frequency_pf, tmp_path):
     plot_partial_dependence(pdp, save_path=str(out))
     assert out.exists()
     assert out.stat().st_size > 0
+
+
+def test_finalize_calls_plt_show(monkeypatch):
+    """Regression test for a real notebook-display bug found while
+    building the Workbook notebooks: in a Jupyter/inline-backend session,
+    matplotlib_inline auto-displays open figures via a post-execute hook
+    -- but confirmed directly that this hook silently stops firing after
+    the *first* figure drawn inside a `with plt.rc_context(...):` block
+    in that kernel session (every subsequent insurabench chart in the
+    same notebook produced no output at all, no error either, since
+    every insurabench.viz function wraps its drawing in `theme()`, which
+    is exactly such an rc_context). An explicit `plt.show()` in
+    `finalize` sidesteps this -- this test pins that call, rather than
+    only the structural checks the rest of this file does (which use the
+    Agg backend and can't exercise this bug at all, agnostic to display).
+    """
+    from insurabench.viz.theme import finalize
+
+    calls = []
+    monkeypatch.setattr(plt, "show", lambda *a, **k: calls.append(1))
+
+    fig, _ax = plt.subplots()
+    finalize(fig, None)
+
+    assert calls == [1]

@@ -8,7 +8,11 @@ charts, not three different libraries' defaults stitched together.
 Every public plotting function wraps its drawing code in ``with
 theme():`` (a ``matplotlib.rc_context``), so the style never leaks into
 the caller's own matplotlib state -- safe to call from a notebook that
-has its own rcParams, or repeatedly inside a dashboard process.
+has its own rcParams, or repeatedly inside a dashboard process. See
+``finalize``'s own docstring/comment for one specific thing that isn't
+automatic in a notebook despite that isolation: an explicit ``plt.show()``
+is required there for every plot after the first one in a kernel session
+to actually display.
 """
 from __future__ import annotations
 
@@ -113,3 +117,15 @@ def finalize(fig, save_path: str | None):
     fig.tight_layout()
     if save_path is not None:
         fig.savefig(save_path)
+    # Explicit plt.show() matters here, not just for interactive use: in a
+    # Jupyter/inline-backend session, matplotlib_inline auto-displays open
+    # figures at the end of each cell via a post-execute hook -- but that
+    # hook stops firing after the *first* figure created inside a
+    # `with plt.rc_context(...):` block in that kernel session (confirmed
+    # directly -- a second, third, etc. figure drawn inside `theme()`'s own
+    # rc_context, with no explicit plt.show(), silently produces no output
+    # at all, no error either). An explicit plt.show() here sidesteps
+    # whatever state rc_context leaves behind and reliably displays every
+    # time. Harmless everywhere else: under a non-interactive backend
+    # (e.g. Agg, what a plain script/CI run uses), plt.show() is a no-op.
+    plt.show()
