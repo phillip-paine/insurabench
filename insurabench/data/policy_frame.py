@@ -24,8 +24,8 @@ from insurabench.linking import LinkageReport, validate_linkage
 RESERVING_ASSUMPTION = (
     "insurabench treats claim amounts as final/as-of snapshot values: there "
     "is no paid/incurred/reserved distinction and no claim-development "
-    "modeling. If your claims are still maturing, finalize/aggregate them "
-    "upstream first (design brief §3.4, §9.6)."
+    "modeling. If your claims are still maturing, finalise and aggregate them "
+    "upstream first."
 )
 
 
